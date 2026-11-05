@@ -1,0 +1,14 @@
+# Copia este archivo como terraform.tfvars y completa los datos de TU cuenta.
+# No reutilices OCIDs de un ejemplo o de otra persona.
+tenancy_ocid      = "REEMPLAZAR"
+user_ocid         = "REEMPLAZAR"
+fingerprint       = "REEMPLAZAR"
+private_key_path  = "C:/Users/irisc/Downloads/REEMPLAZAR_api_key.pem"
+region            = "sa-saopaulo-1"
+compartment_ocid  = "REEMPLAZAR"
+ubuntu_image_ocid = "REEMPLAZAR_IMAGEN_UBUNTU_X86_64_DE_SAO_PAULO"
+subnet_ocid       = "REEMPLAZAR_SUBRED_PUBLICA"
+availability_domain = "REEMPLAZAR_NOMBRE_COMPLETO_DEL_AD_DE_TU_CUENTA"
+ssh_public_key_path = "C:/Users/irisc/Downloads/ssh-key-2026-10-05.key.pub"
+
+docker_image = "sunner01/vixor-docker-auto:latest"

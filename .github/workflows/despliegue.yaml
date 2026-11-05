@@ -1,0 +1,93 @@
+name: Terraform deploy OCI
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: terraform-oci-vixor
+  cancel-in-progress: false
+
+jobs:
+  terraform:
+    name: Terraform apply
+    runs-on: ubuntu-latest
+    env:
+      TF_IN_AUTOMATION: "true"
+      TF_VAR_tenancy_ocid: ${{ secrets.TF_VAR_TENANCY_OCID }}
+      TF_VAR_compartment_ocid: ${{ secrets.TF_VAR_COMPARTMENT_OCID }}
+      TF_VAR_user_ocid: ${{ secrets.OCID_USER_OCID }}
+      TF_VAR_subnet_ocid: ${{ secrets.TF_VAR_SUBNET_OCID }}
+      TF_VAR_ubuntu_image_ocid: ${{ secrets.TF_VAR_UBUNTU_IMAGE_OCID }}
+      TF_VAR_availability_domain: ${{ secrets.TF_VAR_AVAILABILITY_DOMAIN }}
+      TF_VAR_fingerprint: ${{ secrets.OCID_FINGERPRINT }}
+      TF_VAR_region: ${{ secrets.OCI_REGION }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.17.0"
+          terraform_wrapper: false
+
+      - name: Configurar credenciales OCI
+        env:
+          OCI_API_KEY_PEM: ${{ secrets.OCI_API_KEY_PEM }}
+          OCI_SSH_PUBLIC_KEY: ${{ secrets.TF_VAR_SSH_PUBLIC_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "$OCI_API_KEY_PEM" || { echo "Falta el secreto OCI_API_KEY_PEM"; exit 1; }
+          test -n "$OCI_SSH_PUBLIC_KEY" || { echo "Falta el secreto TF_VAR_SSH_PUBLIC_KEY"; exit 1; }
+          for name in TF_VAR_tenancy_ocid TF_VAR_compartment_ocid TF_VAR_user_ocid TF_VAR_subnet_ocid TF_VAR_ubuntu_image_ocid TF_VAR_availability_domain TF_VAR_fingerprint TF_VAR_region; do
+            test -n "${!name}" || { echo "Falta configurar $name"; exit 1; }
+          done
+          mkdir -p "$HOME/.oci"
+          chmod 700 "$HOME/.oci"
+          key_path="$RUNNER_TEMP/oci_api_key.pem"
+          printf '%s\n' "$OCI_API_KEY_PEM" > "$key_path"
+          chmod 600 "$key_path"
+          printf '[DEFAULT]\nuser=%s\nfingerprint=%s\ntenancy=%s\nregion=%s\nkey_file=%s\n' \
+            "$TF_VAR_user_ocid" "$TF_VAR_fingerprint" "$TF_VAR_tenancy_ocid" \
+            "$TF_VAR_region" "$key_path" > "$HOME/.oci/config"
+          chmod 600 "$HOME/.oci/config"
+          public_key_path="$RUNNER_TEMP/vixor.pub"
+          printf '%s\n' "$OCI_SSH_PUBLIC_KEY" > "$public_key_path"
+          chmod 600 "$public_key_path"
+          echo "TF_VAR_private_key_path=$key_path" >> "$GITHUB_ENV"
+          echo "TF_VAR_ssh_public_key_path=$public_key_path" >> "$GITHUB_ENV"
+
+      - name: Terraform init
+        run: terraform init -input=false
+
+      - name: Terraform validate
+        run: terraform validate -no-color
+
+      - name: Terraform apply con intentos de capacidad
+        run: |
+          set -euo pipefail
+          for i in 1 2 3 4 5; do
+            echo "Intento $i de 5"
+            terraform plan -input=false -out=tfplan
+            if terraform apply -input=false -auto-approve tfplan 2>&1 | tee apply.log; then
+              echo "Despliegue realizado con exito"
+              terraform output -raw web_url
+              exit 0
+            fi
+            if ! grep -qi 'Out of host capacity' apply.log; then
+              echo "Terraform fallo por una causa distinta de la capacidad de OCI"
+              exit 1
+            fi
+            if [ "$i" -lt 5 ]; then
+              echo "OCI sin capacidad; esperando 30 segundos"
+              sleep 30
+            fi
+          done
+          echo "OCI no tuvo capacidad para VM.Standard.E5.Flex en 5 intentos"
+          exit 1

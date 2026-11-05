@@ -1,0 +1,15 @@
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfvars.json
+*.tfplan
+crash.log
+*.pem
+*.key
+# Mantener .terraform.lock.hcl en Git para fijar versiones del proveedor.
+
+respaldo-*/
+terraform.exe
+*.zip
+.vscode/
